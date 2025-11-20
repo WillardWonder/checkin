@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Bluejay Athlete History</title>
+    <style>
+        body { font-family: 'Roboto', sans-serif; background: #f4f7f6; margin: 0; padding: 20px; color: #333; }
+        
+        /* HEADER */
+        .header { 
+            display: flex; justify-content: space-between; align-items: center; 
+            background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 20px;
+        }
+        h1 { margin: 0; color: #0033A0; text-transform: uppercase; font-size: 1.5rem; }
+        
+        /* CONTROLS */
+        .controls { 
+            display: grid; grid-template-columns: 1fr 1fr auto; gap: 15px; 
+            background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        select, input { padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem; width: 100%; box-sizing: border-box; }
+        label { font-weight: bold; font-size: 0.8rem; color: #666; display: block; margin-bottom: 5px; }
+
+        .btn-download { 
+            background: #28a745; color: white; border: none; padding: 10px 20px; 
+            border-radius: 4px; cursor: pointer; font-weight: bold; height: 100%; display: flex; align-items: center;
+        }
+        .btn-download:hover { background: #218838; }
+
+        /* DATA TABLE */
+        .table-container { background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        table { width: 100%; border-collapse: collapse; min-width: 600px; }
+        
+        thead { background: #0033A0; color: white; }
+        th { 
+            padding: 15px; text-align: left; cursor: pointer; user-select: none; 
+            text-transform: uppercase; font-size: 0.85rem; letter-spacing: 1px;
+        }
+        th:hover { background: #002270; }
+        
+        td { padding: 12px 15px; border-bottom: 1px solid #eee; }
+        tr:hover { background: #f9f9f9; }
+
+        /* METRICS */
+        .score-badge { background: #eee; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+        .high-score { background: #ffd700; color: #000; }
+        
+        .tag { padding: 3px 8px; border-radius: 10px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; }
+        .tag.Ready { background: #d4edda; color: #155724; }
+        .tag.OK { background: #fff3cd; color: #856404; }
+        .tag.Dry { background: #f8d7da; color: #721c24; }
+
+        /* LOADING */
+        #loader { text-align: center; padding: 40px; color: #666; font-style: italic; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div>
+        <h1>History & Analytics</h1>
+        <div style="font-size: 0.9rem; color: #666; margin-top: 5px;">Season Overview</div>
+    </div>
+    <div>
+        <strong style="font-size: 1.2rem; color: #0033A0;" id="totalRecords">0</strong> Records Found
+    </div>
+</div>
+
+<div class="controls">
+    <div>
+        <label>FILTER BY ATHLETE</label>
+        <select id="athleteFilter">
+            <option value="ALL">Show All Athletes</option>
+            <!-- Options populated by JS -->
+        </select>
+    </div>
+    <div>
+        <label>SEARCH FOCUS / NOTES</label>
+        <input type="text" id="searchBox" placeholder="Search technique or keyword...">
+    </div>
+    <div style="display: flex; align-items: flex-end;">
+        <button onclick="downloadCSV()" class="btn-download">⬇ EXPORT TO EXCEL</button>
+    </div>
+</div>
+
+<div class="table-container">
+    <div id="loader">Loading Season Data...</div>
+    <table id="dataTable" style="display:none;">
+        <thead>
+            <tr>
+                <th onclick="sortTable('date')">Date ↕</th>
+                <th onclick="sortTable('name')">Athlete ↕</th>
+                <th onclick="sortTable('gridScore')">Grid Score ↕</th>
+                <th onclick="sortTable('cueWord')">Cue Word ↕</th>
+                <th>Technical Focus</th>
+                <th>Wellness</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody">
+            <!-- Rows injected here -->
+        </tbody>
+    </table>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+  import { getFirestore, collection, query, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+
+  // YOUR FIREBASE CONFIG
+  const firebaseConfig = {
+    apiKey: "AIzaSyAwClhGBh_kNyS-To11frhaW5upWCZFpHc",
+    authDomain: "merrillgirlswrestling.firebaseapp.com",
+    projectId: "merrillgirlswrestling",
+    storageBucket: "merrillgirlswrestling.firebasestorage.app",
+    messagingSenderId: "72031529414",
+    appId: "1:72031529414:web:38b42fd54be4f08d772ac7",
+    measurementId: "G-NQTPL8RL7M"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  // STATE
+  let rawData = [];
+  let currentSort = { field: 'date', dir: 'desc' };
+
+  // 1. FETCH DATA (Real-time)
+  const q = query(collection(db, "checkins"), orderBy("timestamp", "desc"));
+  
+  onSnapshot(q, (snapshot) => {
+      rawData = [];
+      const uniqueNames = new Set();
+
+      snapshot.forEach(doc => {
+          const d = doc.data();
+          rawData.push(d);
+          if(d.name) uniqueNames.add(d.name);
+      });
+
+      populateDropdown(Array.from(uniqueNames).sort());
+      renderTable();
+      document.getElementById('loader').style.display = 'none';
+      document.getElementById('dataTable').style.display = 'table';
+  });
+
+  // 2. POPULATE DROPDOWN
+  function populateDropdown(names) {
+      const select = document.getElementById('athleteFilter');
+      const currentVal = select.value;
+      
+      // Keep "Show All"
+      select.innerHTML = '<option value="ALL">Show All Athletes</option>';
+      
+      names.forEach(name => {
+          const option = document.createElement('option');
+          option.value = name;
+          option.innerText = name;
+          select.appendChild(option);
+      });
+
+      // Restore previous selection if it still exists
+      if(names.includes(currentVal)) select.value = currentVal;
+  }
+
+  // 3. RENDER TABLE
+  window.renderTable = () => {
+      const filterName = document.getElementById('athleteFilter').value;
+      const searchText = document.getElementById('searchBox').value.toLowerCase();
+      const tbody = document.getElementById('tableBody');
+      
+      // Filter
+      let filtered = rawData.filter(row => {
+          const nameMatch = filterName === 'ALL' || row.name === filterName;
+          const textMatch = !searchText || (row.techFocus && row.techFocus.toLowerCase().includes(searchText));
+          return nameMatch && textMatch;
+      });
+
+      // Sort
+      filtered.sort((a, b) => {
+          let valA = a[currentSort.field];
+          let valB = b[currentSort.field];
+          
+          // Handle text vs numbers
+          if (typeof valA === 'string') valA = valA.toLowerCase();
+          if (typeof valB === 'string') valB = valB.toLowerCase();
+
+          if (valA < valB) return currentSort.dir === 'asc' ? -1 : 1;
+          if (valA > valB) return currentSort.dir === 'asc' ? 1 : -1;
+          return 0;
+      });
+
+      // Update UI Count
+      document.getElementById('totalRecords').innerText = filtered.length;
+
+      // Generate HTML
+      tbody.innerHTML = '';
+      filtered.forEach(row => {
+          const scoreClass = row.gridScore >= 30 ? 'score-badge high-score' : 'score-badge';
+          const hydClass = row.hydration === 'Ready' ? 'Ready' : (row.hydration === 'OK' ? 'OK' : 'Dry');
+
+          const tr = `
+              <tr>
+                  <td style="font-weight:bold; color:#555;">${row.date}</td>
+                  <td style="font-weight:bold; color:#0033A0;">${row.name}</td>
+                  <td><span class="${scoreClass}">${row.gridScore || 0}</span></td>
+                  <td>${row.cueWord || '-'}</td>
+                  <td>${row.techFocus || '-'}</td>
+                  <td style="font-size:0.85rem;">
+                      <span class="tag ${hydClass}">${row.hydration}</span>
+                      <span style="margin-left:5px;">💤 ${row.sleep}h</span>
+                  </td>
+              </tr>
+          `;
+          tbody.innerHTML += tr;
+      });
+  }
+
+  // 4. SORTING HANDLER
+  window.sortTable = (field) => {
+      if(currentSort.field === field) {
+          currentSort.dir = currentSort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+          currentSort.field = field;
+          currentSort.dir = 'desc'; // Default to high-to-low for new cols
+      }
+      renderTable();
+  }
+
+  // 5. EXPORT TO CSV
+  window.downloadCSV = () => {
+      const filterName = document.getElementById('athleteFilter').value;
+      // Get current filtered data by re-running filter logic quickly
+      const searchText = document.getElementById('searchBox').value.toLowerCase();
+      let dataToExport = rawData.filter(row => {
+          const nameMatch = filterName === 'ALL' || row.name === filterName;
+          const textMatch = !searchText || (row.techFocus && row.techFocus.toLowerCase().includes(searchText));
+          return nameMatch && textMatch;
+      });
+
+      if (dataToExport.length === 0) { alert("No data to export!"); return; }
+
+      let csvContent = "data:text/csv;charset=utf-8,";
+      csvContent += "Date,Name,Grid Score,Cue Word,Technical Focus,Hydration,Sleep,Energy\n"; // Headers
+
+      dataToExport.forEach(row => {
+          // Escape commas in text fields to avoid breaking CSV
+          const focus = row.techFocus ? `"${row.techFocus.replace(/"/g, '""')}"` : "";
+          const rowStr = `${row.date},${row.name},${row.gridScore},${row.cueWord},${focus},${row.hydration},${row.sleep},${row.energy}`;
+          csvContent += rowStr + "\n";
+      });
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", "bluejay_wrestling_data.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+  }
+
+  // Event Listeners
+  document.getElementById('athleteFilter').addEventListener('change', renderTable);
+  document.getElementById('searchBox').addEventListener('keyup', renderTable);
+
+</script>
+
+</body>
+</html>
