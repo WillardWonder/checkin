@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Bluejay Practice Live</title>
+    <style>
+        body { background: #111; color: white; font-family: sans-serif; margin: 0; overflow: hidden; }
+        .header { background: #0033A0; padding: 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .header h1 { margin: 0; font-size: 2.5rem; text-transform: uppercase; }
+        .dashboard-container { padding: 20px; height: calc(100vh - 100px); overflow-y: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 1.4rem; }
+        thead th { text-align: left; padding: 15px; color: #888; text-transform: uppercase; font-size: 1rem; border-bottom: 2px solid #333; }
+        tbody tr { border-bottom: 1px solid #222; animation: fadeIn 0.5s ease-in; }
+        tbody td { padding: 20px 15px; }
+        .status-tag { padding: 5px 10px; border-radius: 4px; font-weight: bold; font-size: 1rem; }
+        .ready { background: #28a745; color: white; }
+        .ok { background: #ffc107; color: black; }
+        .dry { background: #dc3545; color: white; }
+        .cue-pill { background: #333; padding: 5px 15px; border-radius: 20px; border: 1px solid #555; color: #81d4fa; font-weight: bold; }
+        .score-box { font-weight: bold; font-size: 1.6rem; color: #ffd700; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+<div class="header">
+    <h1>Bluejay Practice Live</h1>
+    <div style="font-size:1.5rem; font-weight:bold;">Checked In: <span id="count">0</span></div>
+</div>
+<div class="dashboard-container">
+    <table>
+        <thead><tr><th width="20%">Athlete</th><th width="10%">Score</th><th width="15%">Identity</th><th width="35%">Focus</th><th width="10%">Hydration</th><th width="10%">Sleep</th></tr></thead>
+        <tbody id="tableBody"></tbody>
+    </table>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+  import { getFirestore, collection, query, where, onSnapshot, orderBy } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+
+  // YOUR CONFIGURATION
+  const firebaseConfig = {
+    apiKey: "AIzaSyAwClhGBh_kNyS-To11frhaW5upWCZFpHc",
+    authDomain: "merrillgirlswrestling.firebaseapp.com",
+    projectId: "merrillgirlswrestling",
+    storageBucket: "merrillgirlswrestling.firebasestorage.app",
+    messagingSenderId: "72031529414",
+    appId: "1:72031529414:web:38b42fd54be4f08d772ac7",
+    measurementId: "G-NQTPL8RL7M"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  
+  // Listener
+  const today = new Date().toISOString().split('T')[0];
+  const q = query(collection(db, "checkins"), where("date", "==", today), orderBy("timestamp", "desc"));
+
+  onSnapshot(q, (snapshot) => {
+      const tbody = document.getElementById('tableBody');
+      tbody.innerHTML = '';
+      document.getElementById('count').innerText = snapshot.size;
+      
+      if(snapshot.empty) { tbody.innerHTML='<tr><td colspan="6" style="text-align:center; color:#555; padding:40px;">Waiting for athletes...</td></tr>'; return; }
+
+      snapshot.forEach((doc) => {
+          const data = doc.data();
+          let hydClass = data.hydration === 'Ready' ? 'ready' : (data.hydration === 'OK' ? 'ok' : 'dry');
+          tbody.innerHTML += `
+              <tr>
+                  <td style="font-weight:bold;">${data.name}</td>
+                  <td><span class="score-box">${data.gridScore}</span></td>
+                  <td><span class="cue-pill">${data.cueWord}</span></td>
+                  <td style="color:#ccc; font-style:italic;">"${data.techFocus}"</td>
+                  <td><span class="status-tag ${hydClass}">${data.hydration}</span></td>
+                  <td>${data.sleep}h</td>
+              </tr>`;
+      });
+  });
+</script>
+</body>
+</html>
